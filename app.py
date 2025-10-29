@@ -27,6 +27,11 @@ import pandas as pd
 
 # st.markdown(hide_streamlit_elements, unsafe_allow_html=True)
 
+st.set_page_config(
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
 hide_st_style = """
             <style>
             #MainMenu {visibility: hidden;}
@@ -102,7 +107,7 @@ if st.session_state["finished"]:
         .reset_index()
         .sort_values("Pick Location", ascending=True)
     )
-
+    result_df.set_index(result_df.columns[0], inplace=True)
     st.success("Return List:")
     st.dataframe(result_df)
 
