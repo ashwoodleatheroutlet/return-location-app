@@ -109,7 +109,7 @@ if st.session_state["finished"]:
     )
     result_df.set_index(result_df.columns[0], inplace=True)
     st.success("Return List:")
-    st.dataframe(result_df)
+    st.table(result_df)
 
     # (Optional) show barcodes not found in the file
     not_found = merged[merged[DISPLAY_COLUMNS[0]].isna()]["Barcode"].unique().tolist()
