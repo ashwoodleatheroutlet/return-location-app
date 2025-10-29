@@ -106,7 +106,7 @@ if st.session_state.finished and st.session_state.result_df is not None and len(
         img_url = (row.get(IMG_COL) or "").strip()
         if img_url:
             st.image(img_url)
-            st.info("No image available")
+            # st.info("No image available")
 
     # DETAILS
     with right:
