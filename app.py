@@ -100,7 +100,7 @@ if st.session_state["finished"]:
         merged.groupby(DISPLAY_COLUMNS, dropna=False)["Count"]
         .sum()
         .reset_index()
-        .sort_values("Pick Location", ascending=False)
+        .sort_values("Pick Location", ascending=True)
     )
 
     st.success("Return List:")
