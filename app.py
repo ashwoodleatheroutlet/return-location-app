@@ -121,8 +121,8 @@ if st.session_state.finished and st.session_state.result_df is not None and len(
             st.button("◀ Prev", on_click=go_prev, disabled=(i == 0))
         with c2:
             st.button("Next ▶", on_click=go_next, disabled=(i >= total - 1))
-        with c3:
-            st.button("Start Over", on_click=restart)
+        # with c3:
+        #     st.button("Start Over", on_click=restart)
 
 elif st.session_state.finished and (st.session_state.result_df is None or len(st.session_state.result_df) == 0):
     st.info("No items to display. Click 'Start Over' to try again.")
