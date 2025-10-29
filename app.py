@@ -1,6 +1,32 @@
 import streamlit as st
 import pandas as pd
 
+hide_streamlit_elements = """
+    <style>
+    /* Hide main menu (hamburger) */
+    #MainMenu {visibility: hidden;}
+
+    /* Hide footer */
+    footer {visibility: hidden;}
+    footer:after {content:""; display:none;}
+
+    /* Hide Streamlit badge and "share" GitHub button */
+    .viewerBadge_link__1S137 {display: none !important;}
+    .stDeployButton {display: none !important;}
+    iframe[title="streamlit footer"] {display: none !important;}
+    div[data-testid="stDecoration"] {display: none !important;}
+    div[data-testid="stStatusWidget"] {display: none !important;}
+    div[data-testid="stToolbar"] {display: none !important;}
+
+    /* Hide beta share button container */
+    div[class*="st-emotion-cache"] a[href*="github.com"] {
+        display: none !important;
+    }
+    </style>
+"""
+
+st.markdown(hide_streamlit_elements, unsafe_allow_html=True)
+
 # ---- Load your CSV ----
 df = pd.read_csv('Return Inventory File.csv', dtype=str)
 
