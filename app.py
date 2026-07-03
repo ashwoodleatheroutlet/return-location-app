@@ -4,13 +4,14 @@ import pandas as pd
 st.set_page_config(layout="wide", initial_sidebar_state="expanded")
 
 # ---- Load your CSV ----
-df = pd.read_csv('Return Inventory File.csv', dtype=str)
-df['Colour'] = df['Colour'].str.title()
+df = pd.read_csv("Return Inventory File.csv", dtype=str)
 
-# Columns — adjust to your real names
-SEARCH_COLUMNS = ['EAN', 'FashBCode']          # barcodes to search
-IMG_COL = 'ImageURL'                           # <-- set this to your image URL column
-DISPLAY_COLUMNS = ['Pick Location', 'Style', 'Colour', IMG_COL]  # what we show per item
+df["Colour"] = df["Colour"].fillna("").str.title()
+
+# Columns
+SEARCH_COLUMNS = ["EAN", "FashBCode"]
+IMG_COL = "ImageURL"
+DISPLAY_COLUMNS = ["Pick Location", "Style", "Colour", IMG_COL]
 
 # ---- Session state ----
 if "entered_barcodes" not in st.session_state:
@@ -24,43 +25,71 @@ if "result_df" not in st.session_state:
 if "current_idx" not in st.session_state:
     st.session_state.current_idx = 0
 
-# ---- Add barcode ----
+# ---- Add barcode/style ----
 def add_item():
     text = st.session_state.text_input.strip()
     if text:
         st.session_state.entered_barcodes.append(text)
-    st.session_state.text_input = ""  # clear input
+    st.session_state.text_input = ""
 
-st.text_input("Scan or enter barcode:", key="text_input", on_change=add_item)
+st.text_input("Scan or enter barcode/style:", key="text_input", on_change=add_item)
 
-# ---- Finish button builds the sequence only once ----
+# ---- Searchable style dropdown ----
+style_options = (
+    df["Style"]
+    .dropna()
+    .astype(str)
+    .str.strip()
+    .drop_duplicates()
+    .sort_values()
+    .tolist()
+)
+
+selected_style = st.selectbox(
+    "Or search by style:",
+    options=[""] + style_options,
+    index=0
+)
+
+if selected_style:
+    if st.button("Add selected style"):
+        st.session_state.entered_barcodes.append(selected_style)
+        st.success(f"Added style: {selected_style}")
+
+# Optional: show what has been entered
+if st.session_state.entered_barcodes:
+    st.write("Entered items:", st.session_state.entered_barcodes)
+
+# ---- Finish button builds the sequence ----
 if st.button("Finish"):
     st.session_state.finished = True
-    st.session_state.current_idx = 0  # reset pointer
+    st.session_state.current_idx = 0
 
-    barcodes = st.session_state.entered_barcodes
+    entries = st.session_state.entered_barcodes
 
-    # 1) Count how many times each barcode was entered
     entered_counts = (
-        pd.Series(barcodes, name="Barcode")
+        pd.Series(entries, name="Barcode")
         .value_counts()
         .rename_axis("Barcode")
         .reset_index(name="Count")
     )
 
-    # 2) Build lookup: Barcode -> (Pick Location, Style, Image)
+    # Build lookup: EAN / FashBCode / Style -> details
     map1 = df[[SEARCH_COLUMNS[0]] + DISPLAY_COLUMNS].rename(columns={SEARCH_COLUMNS[0]: "Barcode"})
     map2 = df[[SEARCH_COLUMNS[1]] + DISPLAY_COLUMNS].rename(columns={SEARCH_COLUMNS[1]: "Barcode"})
+    map3 = df[["Style"] + DISPLAY_COLUMNS].rename(columns={"Style": "Barcode"})
+
     mapping = (
-        pd.concat([map1, map2], ignore_index=True)
+        pd.concat([map1, map2, map3], ignore_index=True)
         .dropna(subset=["Barcode"])
         .drop_duplicates()
     )
 
-    # 3) Join counts to mapping (left join keeps unknown barcodes for warning)
+    entered_counts["Barcode"] = entered_counts["Barcode"].astype(str).str.strip()
+    mapping["Barcode"] = mapping["Barcode"].astype(str).str.strip()
+
     merged = entered_counts.merge(mapping, on="Barcode", how="left")
 
-    # 4) Final summary per (Location, Style, Image): sum counts across barcodes
     result_df = (
         merged.groupby(DISPLAY_COLUMNS, dropna=False)["Count"]
         .sum()
@@ -71,7 +100,6 @@ if st.button("Finish"):
 
     st.session_state.result_df = result_df
 
-    # Optional: show unknown barcodes
     known_barcodes = mapping["Barcode"].dropna().astype(str).str.strip().unique()
 
     not_found = [
@@ -80,9 +108,9 @@ if st.button("Finish"):
     ]
 
     if not_found:
-        st.warning(f"Barcodes not found in file: {not_found}")
+        st.warning(f"Items not found in file: {not_found}")
 
-# ---- Navigator UI (one item at a time) ----
+# ---- Navigator UI ----
 def go_next():
     if st.session_state.result_df is None:
         return
@@ -97,46 +125,45 @@ def restart():
     st.session_state.finished = False
     st.session_state.result_df = None
     st.session_state.current_idx = 0
-    # keep entered_barcodes if you want to reprocess; otherwise clear:
-    # st.session_state.entered_barcodes = []
+    st.session_state.entered_barcodes = []
 
-# ---- Show the current item after Finish ----
+# ---- Show current item ----
 if st.session_state.finished and st.session_state.result_df is not None and len(st.session_state.result_df) > 0:
     total = len(st.session_state.result_df)
     i = st.session_state.current_idx
     row = st.session_state.result_df.iloc[i]
 
-    left, right = st.columns([1, 2])
-
     def has_value(value):
         return pd.notna(value) and str(value).strip() != ""
 
-    # IMAGE - only show if available
+    left, right = st.columns([1, 2])
+
     with left:
         if has_value(row.get(IMG_COL)):
             st.image(str(row[IMG_COL]).strip())
 
-    # DETAILS
     with right:
         if has_value(row.get("Style")):
             st.subheader(str(row["Style"]).strip())
+
+        if has_value(row.get("Colour")):
             st.subheader(str(row["Colour"]).strip())
-        else:
-            st.subheader("Style not found")
 
         if has_value(row.get("Pick Location")):
             st.markdown(f"**Pick Location:** {str(row['Pick Location']).strip()}")
 
         st.markdown(f"**Count:** {int(row['Count'])}")
 
-        st.caption(f"Item {i+1} of {total}")
+        st.caption(f"Item {i + 1} of {total}")
 
         c1, c2, c3 = st.columns([1, 1, 1])
         with c1:
             st.button("◀ Prev", on_click=go_prev, disabled=(i == 0))
         with c2:
             st.button("Next ▶", on_click=go_next, disabled=(i >= total - 1))
+        with c3:
+            st.button("Start Over", on_click=restart)
 
-elif st.session_state.finished and (st.session_state.result_df is None or len(st.session_state.result_df) == 0):
-    st.info("No items to display. Click 'Start Over' to try again.")
+elif st.session_state.finished:
+    st.info("No items to display.")
     st.button("Start Over", on_click=restart)
