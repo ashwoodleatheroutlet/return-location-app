@@ -3,38 +3,41 @@ import pandas as pd
 
 st.set_page_config(layout="wide", initial_sidebar_state="expanded")
 
-# ---- Load your CSV ----
+# ---- Load CSV ----
 df = pd.read_csv("Return Inventory File.csv", dtype=str)
 
 df["Colour"] = df["Colour"].fillna("").str.title()
 
-# Columns
 SEARCH_COLUMNS = ["EAN", "FashBCode"]
 IMG_COL = "ImageURL"
 DISPLAY_COLUMNS = ["Pick Location", "Style", "Colour", IMG_COL]
 
 # ---- Session state ----
-if "entered_barcodes" not in st.session_state:
-    st.session_state.entered_barcodes = []
-if "text_input" not in st.session_state:
-    st.session_state.text_input = ""
-if "finished" not in st.session_state:
-    st.session_state.finished = False
-if "result_df" not in st.session_state:
-    st.session_state.result_df = None
-if "current_idx" not in st.session_state:
-    st.session_state.current_idx = 0
+defaults = {
+    "entered_barcodes": [],
+    "text_input": "",
+    "selected_style": "",
+    "pending_style": "",
+    "selected_colour": "",
+    "finished": False,
+    "result_df": None,
+    "current_idx": 0,
+}
 
-# ---- Add barcode/style ----
+for key, value in defaults.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+# ---- Add barcode ----
 def add_item():
     text = st.session_state.text_input.strip()
     if text:
         st.session_state.entered_barcodes.append(text)
     st.session_state.text_input = ""
 
-st.text_input("Scan or enter barcode/style:", key="text_input", on_change=add_item)
+st.text_input("Scan or enter barcode:", key="text_input", on_change=add_item)
 
-# ---- Searchable style dropdown ----
+# ---- Style dropdown ----
 style_options = (
     df["Style"]
     .dropna()
@@ -45,22 +48,53 @@ style_options = (
     .tolist()
 )
 
-selected_style = st.selectbox(
+def style_selected():
+    selected = st.session_state.selected_style.strip()
+    if selected:
+        st.session_state.pending_style = selected
+    st.session_state.selected_style = ""
+
+st.selectbox(
     "Or search by style:",
     options=[""] + style_options,
-    index=0
+    key="selected_style",
+    on_change=style_selected
 )
 
-if selected_style:
-    if st.button("Add selected style"):
-        st.session_state.entered_barcodes.append(selected_style)
-        st.success(f"Added style: {selected_style}")
+# ---- Colour dropdown appears only after style selected ----
+if st.session_state.pending_style:
+    colour_options = (
+        df.loc[
+            df["Style"].astype(str).str.strip() == st.session_state.pending_style,
+            "Colour"
+        ]
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .drop_duplicates()
+        .sort_values()
+        .tolist()
+    )
 
-# Optional: show what has been entered
-if st.session_state.entered_barcodes:
-    st.write("Entered items:", st.session_state.entered_barcodes)
+    def colour_selected():
+        colour = st.session_state.selected_colour.strip()
 
-# ---- Finish button builds the sequence ----
+        if colour:
+            st.session_state.entered_barcodes.append(
+                f"{st.session_state.pending_style}||{colour}"
+            )
+
+        st.session_state.pending_style = ""
+        st.session_state.selected_colour = ""
+
+    st.selectbox(
+        f"Select colour for {st.session_state.pending_style}:",
+        options=[""] + colour_options,
+        key="selected_colour",
+        on_change=colour_selected
+    )
+
+# ---- Finish button ----
 if st.button("Finish"):
     st.session_state.finished = True
     st.session_state.current_idx = 0
@@ -74,10 +108,20 @@ if st.button("Finish"):
         .reset_index(name="Count")
     )
 
-    # Build lookup: EAN / FashBCode / Style -> details
-    map1 = df[[SEARCH_COLUMNS[0]] + DISPLAY_COLUMNS].rename(columns={SEARCH_COLUMNS[0]: "Barcode"})
-    map2 = df[[SEARCH_COLUMNS[1]] + DISPLAY_COLUMNS].rename(columns={SEARCH_COLUMNS[1]: "Barcode"})
-    map3 = df[["Style"] + DISPLAY_COLUMNS].rename(columns={"Style": "Barcode"})
+    map1 = df[[SEARCH_COLUMNS[0]] + DISPLAY_COLUMNS].rename(
+        columns={SEARCH_COLUMNS[0]: "Barcode"}
+    )
+
+    map2 = df[[SEARCH_COLUMNS[1]] + DISPLAY_COLUMNS].rename(
+        columns={SEARCH_COLUMNS[1]: "Barcode"}
+    )
+
+    map3 = df[DISPLAY_COLUMNS].copy()
+    map3["Barcode"] = (
+        map3["Style"].astype(str).str.strip()
+        + "||"
+        + map3["Colour"].astype(str).str.strip()
+    )
 
     mapping = (
         pd.concat([map1, map2, map3], ignore_index=True)
@@ -94,7 +138,7 @@ if st.button("Finish"):
         merged.groupby(DISPLAY_COLUMNS, dropna=False)["Count"]
         .sum()
         .reset_index()
-        .sort_values(["Pick Location", "Style"], ascending=[True, True])
+        .sort_values(["Pick Location", "Style", "Colour"], ascending=[True, True, True])
         .reset_index(drop=True)
     )
 
@@ -110,7 +154,7 @@ if st.button("Finish"):
     if not_found:
         st.warning(f"Items not found in file: {not_found}")
 
-# ---- Navigator UI ----
+# ---- Navigation ----
 def go_next():
     if st.session_state.result_df is None:
         return
@@ -126,15 +170,19 @@ def restart():
     st.session_state.result_df = None
     st.session_state.current_idx = 0
     st.session_state.entered_barcodes = []
+    st.session_state.text_input = ""
+    st.session_state.selected_style = ""
+    st.session_state.pending_style = ""
+    st.session_state.selected_colour = ""
+
+def has_value(value):
+    return pd.notna(value) and str(value).strip() != ""
 
 # ---- Show current item ----
 if st.session_state.finished and st.session_state.result_df is not None and len(st.session_state.result_df) > 0:
     total = len(st.session_state.result_df)
     i = st.session_state.current_idx
     row = st.session_state.result_df.iloc[i]
-
-    def has_value(value):
-        return pd.notna(value) and str(value).strip() != ""
 
     left, right = st.columns([1, 2])
 
@@ -145,6 +193,8 @@ if st.session_state.finished and st.session_state.result_df is not None and len(
     with right:
         if has_value(row.get("Style")):
             st.subheader(str(row["Style"]).strip())
+        else:
+            st.subheader("Style not found")
 
         if has_value(row.get("Colour")):
             st.subheader(str(row["Colour"]).strip())
