@@ -5,11 +5,12 @@ st.set_page_config(layout="wide", initial_sidebar_state="expanded")
 
 # ---- Load your CSV ----
 df = pd.read_csv('Return Inventory File.csv', dtype=str)
+df['Colour'] = df['Colour'].str.title()
 
 # Columns — adjust to your real names
 SEARCH_COLUMNS = ['EAN', 'FashBCode']          # barcodes to search
 IMG_COL = 'ImageURL'                           # <-- set this to your image URL column
-DISPLAY_COLUMNS = ['Pick Location', 'Style', IMG_COL]  # what we show per item
+DISPLAY_COLUMNS = ['Pick Location', 'Style', 'Colour', IMG_COL]  # what we show per item
 
 # ---- Session state ----
 if "entered_barcodes" not in st.session_state:
@@ -71,7 +72,13 @@ if st.button("Finish"):
     st.session_state.result_df = result_df
 
     # Optional: show unknown barcodes
-    not_found = merged[merged['Pick Location'].isna()]['Barcode'].unique().tolist()
+    known_barcodes = mapping["Barcode"].dropna().astype(str).str.strip().unique()
+
+    not_found = [
+        barcode for barcode in entered_counts["Barcode"].astype(str).str.strip().unique()
+        if barcode not in known_barcodes
+    ]
+
     if not_found:
         st.warning(f"Barcodes not found in file: {not_found}")
 
@@ -101,28 +108,34 @@ if st.session_state.finished and st.session_state.result_df is not None and len(
 
     left, right = st.columns([1, 2])
 
-    # IMAGE
+    def has_value(value):
+        return pd.notna(value) and str(value).strip() != ""
+
+    # IMAGE - only show if available
     with left:
-        img_url = (row.get(IMG_COL) or "").strip()
-        if img_url:
-            st.image(img_url)
-            # st.info("No image available")
+        if has_value(row.get(IMG_COL)):
+            st.image(str(row[IMG_COL]).strip())
 
     # DETAILS
     with right:
-        st.subheader(f"{row['Style']}")
-        st.markdown(f"**Pick Location:** {row['Pick Location']}")
+        if has_value(row.get("Style")):
+            st.subheader(str(row["Style"]).strip())
+            st.subheader(str(row["Colour"]).strip())
+        else:
+            st.subheader("Style not found")
+
+        if has_value(row.get("Pick Location")):
+            st.markdown(f"**Pick Location:** {str(row['Pick Location']).strip()}")
+
         st.markdown(f"**Count:** {int(row['Count'])}")
+
         st.caption(f"Item {i+1} of {total}")
 
-        # Action buttons
         c1, c2, c3 = st.columns([1, 1, 1])
         with c1:
             st.button("◀ Prev", on_click=go_prev, disabled=(i == 0))
         with c2:
             st.button("Next ▶", on_click=go_next, disabled=(i >= total - 1))
-        # with c3:
-        #     st.button("Start Over", on_click=restart)
 
 elif st.session_state.finished and (st.session_state.result_df is None or len(st.session_state.result_df) == 0):
     st.info("No items to display. Click 'Start Over' to try again.")
